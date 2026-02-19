@@ -1,47 +1,231 @@
 <?php
 
-require 'vendor/autoload.php';
+namespace Tuya;
 
-use Tuya\TuyaClient;
-use Tuya\SmartLock;
+class SmartLock extends TuyaClient
+{
+    /**
+     * Obtains the password ticket for the smart-lock.
+     */
+    public function getPasswordTicket($deviceId)
+    {
+        list($accessToken) = $this->getAccessToken();
+        if (!$accessToken) {
+            return ["error" => "Invalid token"];
+        }
 
-// Carrega as variáveis de ambiente do arquivo .env
+        $timestamp = round(microtime(true) * 1000);
+        $nonce     = $this->generateUUID();
+        $urlPath   = "/v1.0/devices/{$deviceId}/door-lock/password-ticket";
+        $bodyData  = '{}';
+        $sign      = $this->generatePostSignature($timestamp, $nonce, $accessToken, $urlPath, $bodyData);
 
-// Recupera as credenciais via variáveis de ambiente
-$clientId       = $_ENV['TUYA_CLIENT_ID'];
-$clientSecret   = $_ENV['TUYA_CLIENT_SECRET'];
-$apiUrl         = $_ENV['TUYA_API_URL'] ?? 'https://api.tuya.com';
-$tokenCacheFile = $_ENV['TUYA_TOKEN_CACHE_FILE'] ?? __DIR__ . '/token_cache.json';
+        $headers = [
+            "client_id: "    . $this->clientId,
+            "t: "            . $timestamp,
+            "nonce: "        . $nonce,
+            "sign: "         . $sign,
+            "sign_method: HMAC-SHA256",
+            "access_token: " . $accessToken,
+            "Content-Type: application/json"
+        ];
 
-// Para funcionalidades genéricas:
-$tuyaClient = new TuyaClient($clientId, $clientSecret, $apiUrl, $tokenCacheFile);
-$deviceInfo = $tuyaClient->getDeviceInfo('id_do_dispositivo');
-print_r($deviceInfo);
+        $ch = curl_init($this->apiUrl . $urlPath);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $bodyData,
+            CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
+        ]);
+        $result = curl_exec($ch);
+        curl_close($ch);
+        return json_decode($result, true);
+    }
 
-// Para funcionalidades de smart-lock:
-$smartLock = new SmartLock($clientId, $clientSecret, $apiUrl, $tokenCacheFile);
+    /**
+     * Encrypts a numeric password using the ticket_key.
+     */
+    public function encryptNumericPassword($plainPassword, $ticketKey, &$debug = [])
+    {
+        if (empty($ticketKey)) {
+            return null;
+        }
 
-// Obter ticket de smart-lock
-$ticketResponse = $smartLock->getPasswordTicket('id_do_dispositivo');
-print_r($ticketResponse);
+        // 1. Decrypt the ticketKey using Client Secret
+        // The ticketKey from API is in Hex, so convert to binary first
+        $encryptedTicketKey = hex2bin($ticketKey);
+        if ($encryptedTicketKey === false) {
+             $debug['error'] = 'Invalid hex ticket key';
+             return null;
+        }
 
-// Criptografar senha e criar senha temporária, por exemplo:
-$plainPassword = "123456";
-$debug = [];
-$encryptedPassword = $smartLock->encryptNumericPassword($plainPassword, $ticketResponse['result']['ticket_key'], $debug);
-echo "Senha criptografada: " . $encryptedPassword;
+        // Verified: Tuya Smart Lock password ticket uses AES-256-ECB with the raw Client Secret string (32 bytes)
+        $key = $this->clientSecret;
+        $decryptedKey = openssl_decrypt($encryptedTicketKey, 'AES-256-ECB', $key, OPENSSL_RAW_DATA);
+        
+        if ($decryptedKey === false) {
+             // Debug OpenSSL errors if needed
+             // while ($msg = openssl_error_string()) { ... }
+             $debug['error'] = 'Failed to decrypt ticket key';
+             return null;
+        }
 
-// Montar payload e criar senha temporária
-$payload = [
-    "name"           => "TP" . sprintf("%08d", rand(0, 99999999)),
-    "password"       => $encryptedPassword,
-    "effective_time" => time() + 24 * 3600, // 24h a partir de agora
-    "invalid_time"   => time() + 48 * 3600, // 48h a partir de agora
-    "password_type"  => "ticket",
-    "ticket_id"      => $ticketResponse['result']['ticket_id'],
-    "type"           => 0,  // múltiplos usos
-    "time_zone"      => "",
-    "phone"          => ""
-];
-$tempPasswordResponse = $smartLock->createTempPassword('id_do_dispositivo', $payload);
-print_r($tempPasswordResponse);
+        // 2. Encrypt the password using the decrypted key
+        $encryptedPassword = openssl_encrypt($plainPassword, 'AES-128-ECB', $decryptedKey, OPENSSL_RAW_DATA);
+        
+        // 3. Return as Hex string
+        return bin2hex($encryptedPassword);
+    }
+
+    /**
+     * Creates a temporary password on the smart-lock.
+     */
+    public function createTempPassword($deviceId, $payload)
+    {
+        list($accessToken) = $this->getAccessToken();
+        if (!$accessToken) {
+            return ["error" => "Invalid token"];
+        }
+
+        $timestamp = round(microtime(true) * 1000);
+        $nonce     = $this->generateUUID();
+        $urlPath   = "/v1.0/devices/{$deviceId}/door-lock/temp-password";
+        $bodyData  = json_encode($payload);
+        $sign      = $this->generatePostSignature($timestamp, $nonce, $accessToken, $urlPath, $bodyData);
+
+        $headers = [
+            "client_id: "    . $this->clientId,
+            "t: "            . $timestamp,
+            "nonce: "        . $nonce,
+            "sign: "         . $sign,
+            "sign_method: HMAC-SHA256",
+            "access_token: " . $accessToken,
+            "Content-Type: application/json"
+        ];
+
+        $ch = curl_init($this->apiUrl . $urlPath);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $bodyData,
+            CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
+        ]);
+        $result = curl_exec($ch);
+        curl_close($ch);
+        return json_decode($result, true);
+    }    
+    
+    /**
+     * Gets a temporary password from the smart-lock.
+     */
+    public function getTempPassword($deviceId, $passwordId)
+    {
+        list($accessToken) = $this->getAccessToken();
+        if (!$accessToken) {
+            return ["error" => "Invalid token"];
+        }
+
+        $timestamp = round(microtime(true) * 1000);
+        $nonce     = $this->generateUUID();
+        $urlPath   = "/v1.0/devices/{$deviceId}/door-lock/temp-password/{$passwordId}";
+        
+        $sign = $this->generateSignature($timestamp, $nonce, $accessToken, $urlPath);
+
+        $headers = [
+            "client_id: "    . $this->clientId,
+            "t: "            . $timestamp,
+            "nonce: "        . $nonce,
+            "sign: "         . $sign,
+            "sign_method: HMAC-SHA256",
+            "access_token: " . $accessToken,
+            "Content-Type: application/json"
+        ];
+
+        $ch = curl_init($this->apiUrl . $urlPath);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
+        ]);
+        $result = curl_exec($ch);
+        curl_close($ch);
+        return json_decode($result, true);
+    }
+
+    /**
+     * Deletes a temporary password from the smart-lock.
+     */
+    public function deleteTempPassword($deviceId, $passwordId)
+    {
+        list($accessToken) = $this->getAccessToken();
+        if (!$accessToken) {
+            return ["error" => "Invalid token"];
+        }
+
+        $timestamp = round(microtime(true) * 1000);
+        $nonce     = $this->generateUUID();
+        $urlPath   = "/v1.0/devices/{$deviceId}/door-lock/temp-passwords/{$passwordId}";
+        
+        $sign = $this->generateSignature($timestamp, $nonce, $accessToken, $urlPath, 'DELETE');
+
+        $headers = [
+            "client_id: "    . $this->clientId,
+            "t: "            . $timestamp,
+            "nonce: "        . $nonce,
+            "sign: "         . $sign,
+            "sign_method: HMAC-SHA256",
+            "access_token: " . $accessToken,
+            "Content-Type: application/json"
+        ];
+
+        $ch = curl_init($this->apiUrl . $urlPath);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_CUSTOMREQUEST  => "DELETE",
+            CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
+        ]);
+        $result = curl_exec($ch);
+        curl_close($ch);
+        return json_decode($result, true);
+    }
+
+    /**
+     * Lists the temporary passwords for the smart-lock.
+     */
+    public function listTempPasswords($deviceId)
+    {
+        list($accessToken) = $this->getAccessToken();
+        if (!$accessToken) {
+            return ["error" => "Invalid token"];
+        }
+
+        $timestamp = round(microtime(true) * 1000);
+        $nonce     = $this->generateUUID();
+        $urlPath   = "/v1.0/devices/{$deviceId}/door-lock/temp-passwords";
+        
+        $sign = $this->generateSignature($timestamp, $nonce, $accessToken, $urlPath);
+
+        $headers = [
+            "client_id: "    . $this->clientId,
+            "t: "            . $timestamp,
+            "nonce: "        . $nonce,
+            "sign: "         . $sign,
+            "sign_method: HMAC-SHA256",
+            "access_token: " . $accessToken,
+            "Content-Type: application/json"
+        ];
+
+        $ch = curl_init($this->apiUrl . $urlPath);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
+        ]);
+        $result = curl_exec($ch);
+        curl_close($ch);
+        return json_decode($result, true);
+    }
+}
