@@ -33,6 +33,19 @@ TUYA_API_SECRET=your_api_secret_here
 TUYA_REGION=your_region_here
 ```
 
+## 🌐 Tuya Data Center API Endpoints
+
+Depending on your data center location, use one of the following API URLs:
+
+| Data Center | API Endpoint URL |
+| :--- | :--- |
+| **China** | `https://openapi.tuyacn.com` |
+| **Western America** | `https://openapi.tuyaus.com` |
+| **Eastern America** | `https://openapi-ueaz.tuyaus.com` |
+| **Central Europe** | `https://openapi.tuyaeu.com` |
+| **Western Europe** | `https://openapi-weaz.tuyaeu.com` |
+| **India** | `https://openapi.tuyain.com` |
+
 ## 🌐 How to Generate Tuya API Credentials
 
 To use this package, you must first obtain API credentials from Tuya. Follow these steps:
