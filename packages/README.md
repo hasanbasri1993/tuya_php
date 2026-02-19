@@ -1,1 +1,0 @@
-Estrutura de funções para deploy na digital ocean
