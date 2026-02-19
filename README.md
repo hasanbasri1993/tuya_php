@@ -30,8 +30,74 @@ Configure your `.env` file with the following:
 ```
 TUYA_API_KEY=your_api_key_here
 TUYA_API_SECRET=your_api_secret_here
-TUYA_REGION=your_region_here
+TUYA_API_URL=your_api_url_here
 ```
+
+## 🧩 Laravel Integration
+
+This package ships with a **Laravel service provider** and configuration file.
+
+### **1. Install the package**
+
+```bash
+composer require rbertolli/tuya-php
+```
+
+### **2. Publish the config (optional but recommended)**
+
+```bash
+php artisan vendor:publish --tag=tuya-config
+```
+
+This will create `config/tuya.php` in your Laravel project.
+
+### **3. Configure your `.env`**
+
+Add (or update) the following variables in your Laravel app:
+
+```env
+TUYA_CLIENT_ID=your_client_id_here
+TUYA_CLIENT_SECRET=your_client_secret_here
+TUYA_API_URL=https://openapi.tuyaus.com
+TUYA_CACHE_TTL=3600
+```
+
+### **4. Using in controllers / services**
+
+You can type‑hint `Tuya\Core\TuyaClient` or `Tuya\Core\SmartLock` and let Laravel inject them:
+
+```php
+use Tuya\Core\SmartLock;
+
+class SmartLockController
+{
+    public function createTempPassword(SmartLock $smartLock)
+    {
+        $deviceId = 'YOUR_DEVICE_ID';
+
+        $now = time();
+
+        $result = $smartLock->createNumericTempPassword(
+            deviceId: $deviceId,
+            effectiveTime: $now,
+            invalidTime: $now + 600,   // valid for 10 minutes
+            timeZone: '+00:00',
+        );
+
+        // Plain password to type on the lock:
+        $plainPassword = $result['plain_password'];
+
+        // Raw Tuya API response:
+        $apiResponse = $result['response'];
+    }
+}
+```
+
+The service provider takes care of:
+
+- **HTTP client**: using Guzzle via `Tuya\Core\Http\GuzzleHttpClient`
+- **Caching**: file cache under Laravel `storage_path('framework/cache/tuya')`
+- **Reading config** from `config/tuya.php` / `.env`
 
 ## 🌐 Tuya Data Center API Endpoints
 
@@ -77,6 +143,32 @@ Once your project is created, go to **Project Details** and find:
 ## 🌐 Serverless Functions
 
 This project supports DigitalOcean Functions for seamless API execution.
+
+## 📦 Local Examples
+
+After installing dependencies with Composer:
+
+```bash
+composer install
+```
+
+You can try the example scripts in the `examples` folder:
+
+- `examples/smart_lock.php` – **full smart-lock flow**: gets a ticket, creates a temporary password, shows details, and optionally deletes it.
+- `examples/smart_lock_test.php` – **simple test**: gets a ticket and creates **one** temporary password, printing its ID and the plain password.
+
+Before running them, edit the files and set:
+
+- **Client ID** and **Client Secret** from your Tuya Cloud project
+- **API URL** for your region (see table above)
+- **Device ID** of your smart lock
+
+Run the scripts from the project root:
+
+```bash
+php examples/smart_lock_test.php
+php examples/smart_lock.php
+```
 
 ### Example Requests
 
