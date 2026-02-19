@@ -190,13 +190,13 @@ interface HttpClientInterface
 
 ## Success Criteria
 
-- [x] Package works standalone (without Laravel)
-- [x] Package auto-registers in Laravel 12
-- [x] Facade provides clean API
-- [x] Config supports both .env and published file
-- [x] All existing functionality preserved
-- [x] PHPUnit tests pass with 80%+ coverage
-- [x] Documentation updated for Laravel usage
+- [ ] Package works standalone (without Laravel)
+- [ ] Package auto-registers in Laravel 12
+- [ ] Facade provides clean API
+- [ ] Config supports both .env and published file
+- [ ] All existing functionality preserved
+- [ ] PHPUnit tests pass with 80%+ coverage
+- [ ] Documentation updated for Laravel usage
 
 ## Next Steps
 
