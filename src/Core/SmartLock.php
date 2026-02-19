@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tuya\Core;
 
 use Tuya\Core\Contracts\HttpClientInterface;
+use Tuya\Core\Dto\TempPasswordCreationResult;
 
 final class SmartLock
 {
@@ -183,11 +184,6 @@ final class SmartLock
 
     /**
      * High-level helper to create a numeric temporary password.
-     *
-     * @return array{
-     *     plain_password: string,
-     *     response: array
-     * }
      */
     public function createNumericTempPassword(
         string $deviceId,
@@ -195,15 +191,15 @@ final class SmartLock
         int $invalidTime,
         string $timeZone = '+00:00',
         ?string $name = null,
-    ): array {
+    ): TempPasswordCreationResult {
         $ticket = $this->getPasswordTicket($deviceId);
         $result = $ticket['result'] ?? [];
 
         if (empty($result['ticket_key']) || empty($result['ticket_id'])) {
-            return [
-                'plain_password' => '',
-                'response' => $ticket,
-            ];
+            return new TempPasswordCreationResult(
+                plainPassword: '',
+                response: $ticket,
+            );
         }
 
         $plainPassword = sprintf('%07d', random_int(0, 9_999_999));
@@ -214,14 +210,14 @@ final class SmartLock
         );
 
         if ($encryptedPassword === null) {
-            return [
-                'plain_password' => '',
-                'response' => [
+            return new TempPasswordCreationResult(
+                plainPassword: '',
+                response: [
                     'success' => false,
                     'error' => 'Failed to encrypt password using provided ticket_key',
                     'ticket' => $ticket,
                 ],
-            ];
+            );
         }
 
         $payload = [
@@ -238,10 +234,19 @@ final class SmartLock
 
         $response = $this->createTempPassword($deviceId, $payload);
 
-        return [
-            'plain_password' => $plainPassword,
-            'response'       => $response,
-        ];
+        // If Tuya reports failure (including limit reached, e.g. code 2303),
+        // do not expose a plain password as if it were valid.
+        if (empty($response['success']) || $response['success'] !== true) {
+            return new TempPasswordCreationResult(
+                plainPassword: '',
+                response: $response,
+            );
+        }
+
+        return new TempPasswordCreationResult(
+            plainPassword: $plainPassword,
+            response: $response,
+        );
     }
 
     private function generateUUID(): string
