@@ -31,19 +31,17 @@ class TuyaClient
         );
     }
     
-    protected function generateSignature($timestamp, $nonce, $accessToken = '', $urlPath = '')
+    protected function generateSignature($timestamp, $nonce, $accessToken = '', $urlPath = '', $method = 'GET', $bodyData = '')
     {
-        $stringToSign = "GET\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n\n" . $urlPath;
-        $stringToHash = $this->clientId . $accessToken . $timestamp . $nonce . $stringToSign;
+        $content_sha256 = hash('sha256', $bodyData);
+        $stringToSign   = strtoupper($method) . "\n" . $content_sha256 . "\n\n" . $urlPath;
+        $stringToHash   = $this->clientId . $accessToken . $timestamp . $nonce . $stringToSign;
         return strtoupper(hash_hmac('sha256', $stringToHash, $this->clientSecret));
     }
     
     protected function generatePostSignature($timestamp, $nonce, $accessToken, $urlPath, $bodyData)
     {
-        $content_sha256 = hash('sha256', $bodyData);
-        $stringToSign   = "POST\n" . $content_sha256 . "\n\n" . $urlPath;
-        $stringToHash   = $this->clientId . $accessToken . $timestamp . $nonce . $stringToSign;
-        return strtoupper(hash_hmac('sha256', $stringToHash, $this->clientSecret));
+        return $this->generateSignature($timestamp, $nonce, $accessToken, $urlPath, 'POST', $bodyData);
     }
     
     public function getAccessToken()
@@ -74,10 +72,12 @@ class TuyaClient
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1
         ]);
-        $response = json_decode(curl_exec($ch), true);
+        $raw = curl_exec($ch);
+        $curlError = curl_error($ch);
         curl_close($ch);
+        $response = json_decode($raw, true);
         
-        if (!empty($response['result']['access_token'])) {
+        if ($response && !empty($response['result']['access_token'])) {
             $response['result']['expires'] = time() + $response['result']['expire_time'] - 60;
             file_put_contents($this->tokenCacheFile, json_encode($response['result']));
             return [$response['result']['access_token'], $response['result']['uid']];
@@ -110,11 +110,32 @@ class TuyaClient
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER     => $headers,
-            CURLOPT_VERBOSE        => true,
+            CURLOPT_VERBOSE        => false,
             CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
         ]);
         $result = curl_exec($ch);
         curl_close($ch);
         return json_decode($result, true);
+    }
+
+    /**
+     * Authenticate and return the access token response.
+     */
+    public function authenticate()
+    {
+        // Clear cache to force a fresh token
+        if (file_exists($this->tokenCacheFile)) {
+            unlink($this->tokenCacheFile);
+        }
+
+        list($accessToken, $uid) = $this->getAccessToken();
+        if ($accessToken) {
+            return [
+                'success' => true,
+                'access_token' => $accessToken,
+                'uid' => $uid
+            ];
+        }
+        return ['success' => false, 'error' => 'Failed to authenticate with Tuya API'];
     }
 }
