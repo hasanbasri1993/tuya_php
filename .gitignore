@@ -28,3 +28,9 @@ Homestead.json
 .env.production
 .phpactor.json
 auth.json
+
+composer.lock
+
+examples/token_cache.json
+
+examples/smart_lock_test.php
