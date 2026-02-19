@@ -74,7 +74,6 @@ class SmartLockController
     public function createTempPassword(SmartLock $smartLock)
     {
         $deviceId = 'YOUR_DEVICE_ID';
-
         $now = time();
 
         $result = $smartLock->createNumericTempPassword(
@@ -84,11 +83,23 @@ class SmartLockController
             timeZone: '+00:00',
         );
 
+        // If creation failed (for example, limit reached with code 2303),
+        // there will be no plain password and you should inspect the response.
+        if (! $result->isSuccess()) {
+            if ($result->isLimitReached()) {
+                // Handle limit reached (e.g. ask user to delete old passwords)
+            }
+
+            $apiResponse = $result->response;
+            // Handle other error cases...
+            return;
+        }
+
         // Plain password to type on the lock:
-        $plainPassword = $result['plain_password'];
+        $plainPassword = $result->plainPassword;
 
         // Raw Tuya API response:
-        $apiResponse = $result['response'];
+        $apiResponse = $result->response;
     }
 }
 ```
